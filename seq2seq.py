@@ -4,9 +4,12 @@ from keras.models import Model
 from keras.layers import Input, LSTM, Dense
 import tensorflow as tf
 from keras.utils.training_utils import multi_gpu_model
-from keras.callbacks import EarlyStopping
 import MeCab
 from argparse import ArgumentParser
+from keras.losses import categorical_crossentropy
+from keras import backend as K
+import math
+import pdb; 
 
 def parser():
     usage = 'Usage: python {} [--mode]'.format(__file__)
@@ -16,15 +19,21 @@ def parser():
     args = argparser.parse_args()
     return args
 
+def ppx(y_true, y_pred):
+    loss = categorical_crossentropy(y_true, y_pred)
+    perplexity = K.cast(K.pow(math.e, K.mean(loss, axis=-1)), K.floatx())
+    return perplexity
+
 args = parser()
 
 weights_filename = args.file
 
 gpu_count = 2
 batch_size = 64  # Batch size for training.
-epochs = 1000  # Number of epochs to train for.
+epochs = 100  # Number of epochs to train for.
+batch_size = 100
 latent_dim = 256  # Latent dimensionality of the encoding space.
-num_samples = 5000  # Number of samples to train on.
+num_samples = 6000  # Number of samples to train on.
 # Path to the data txt file on disk.
 
 data_path = "./conversation.txt"
@@ -72,7 +81,8 @@ for index, line in enumerate(lines[: min(num_samples, len(lines) - 1)]):
     for word in words:
         if word not in target_words:
             target_words.add(word)
-    
+
+
 #input_characters = sorted(list(input_characters))
 #target_characters = sorted(list(target_characters))
 input_words = sorted(list(input_words))
@@ -125,7 +135,7 @@ target_token_index = dict(
     [(word, i) for i, word in enumerate(target_words)])
 
 #input_textsは文の配列なので、単語の配列で構成された文の配列が必要？
-
+pdb.set_trace()
 encoder_input_data = np.zeros(
     (len(input_texts), max_encoder_seq_length, num_encoder_tokens),
     dtype='float32')
@@ -147,6 +157,7 @@ for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
             # and will not include the start character.
             decoder_target_data[i, t - 1, target_token_index[char]] = 1.
 """
+
 # 文のインデックスと単語のインデックスと単語を格納するデータを作成
 for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
     for t, word in enumerate(input_text):
@@ -209,16 +220,41 @@ with tf.device("/cpu:0"):
 
 
 if args.mode == 'train':
+    n_split = int(encoder_input_data.shape[0]*0.8)
+    encoder_train, encoder_val = np.vsplit(encoder_input_data,[n_split])   #エンコーダインプットデータを訓練用と評価用に分割
+    decoder_train, decoder_val = np.vsplit(decoder_input_data,[n_split])   #デコーダインプットデータを訓練用と評価用に分割
+    target_train, target_val = np.vsplit(decoder_target_data,[n_split])   #ラベルデータを訓練用と評価用に分割
     # Run training
-    es_cb = EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='auto')
     model = multi_gpu_model(model, gpus=gpu_count)
-    model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
-    model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
-            batch_size=batch_size,
-            epochs=epochs,
-            validation_split=0.2, callbacks=[es_cb])
-        # Save model
-        # model.save('s2s.h5')
+    model.compile(optimizer='rmsprop', loss=ppx) 
+    row = encoder_train.shape[0]
+    n_batch = math.ceil(row/batch_size)
+    loss_bk = 10000
+    for j in range(0, epochs) :
+        print("Epoch ", j+1, "/", epochs)
+        for i in range(0, n_batch):
+            start = i * batch_size
+            end = min([(i+1)*batch_size, row])
+            encoder_train_batch = encoder_train[start:end,:]
+            decoder_train_batch = decoder_train[start:end,:]
+            target_train_batch = target_train[start:end,:]
+            encoder_val_batch = encoder_val[start:end,:]
+            decoder_val_batch = decoder_val[start:end,:]
+            target_val_batch = target_val[start:end,:]
+            train_loss = model.train_on_batch([encoder_train_batch,decoder_train_batch],target_train_batch)
+            val_loss = model.test_on_batch([encoder_val_batch, decoder_val_batch] ,target_val_batch)
+            print("%d/%d train_loss:%f val_loss:%f" % (start, row, train_loss, val_loss))
+        if j == 0 or val_loss <= loss_bk:
+            loss_bk = val_loss
+        else:
+            print('EarlyStopping')
+            break
+    # model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
+    #        batch_size=batch_size,
+    #        epochs=epochs,
+    #        validation_split=0.2, callbacks=[es_cb])
+    
+    # Save model
     model.save_weights(weights_filename)
         # Next: inference mode (sampling).
         # Here's the drill:
