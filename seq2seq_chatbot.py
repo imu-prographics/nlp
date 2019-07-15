@@ -9,10 +9,11 @@ from argparse import ArgumentParser
 from keras.losses import categorical_crossentropy
 from keras import backend as K
 import math
+
 import pdb; 
 
 def parser():
-    usage = 'Usage: python {} [--mode]'.format(__file__)
+    usage = 'Usage: python --file weight_file_name --mode [train or test]'
     argparser = ArgumentParser(usage=usage)
     argparser.add_argument('--mode','-m', dest='mode', type=str, choices=['train','test'])
     argparser.add_argument('--file', '-f', type=str, required=True, help='set filename of weights for save or load')
@@ -33,41 +34,29 @@ batch_size = 64  # Batch size for training.
 epochs = 100  # Number of epochs to train for.
 batch_size = 100
 latent_dim = 256  # Latent dimensionality of the encoding space.
-num_samples = 6000  # Number of samples to train on.
+num_samples = 8000  # Number of samples to train on.
 # Path to the data txt file on disk.
 
-data_path = "./conversation.txt"
-
+input_data_path = "./input.txt"
+target_data_path = "./output.txt"
 # 単語の配列で表された文の配列に変更
 input_texts = []
 target_texts = []
 
-#input_characters = set()
-#target_characters = set()
-
 input_words = set()  # 追記
 target_words = set()  # 追記
-with  open(data_path, 'r', encoding='utf-8') as f:
-    lines = f.read().split('\n')  # 行ごとのリストに
+with  open(input_data_path, 'r', encoding='utf-8') as f:
+    input_lines = f.read().split('\n')  # 行ごとのリストに
 
-for index, line in enumerate(lines[: min(num_samples, len(lines) - 1)]):
-    input_text = line
-    target_text = lines[index+1]
+with open(target_data_path, 'r', encoding='utf-8') as f:
+    target_lines = f.read().split('\n')
+
+min_samples = min(num_samples, min(len(input_lines)-1, len(target_lines)-1))
+for index, (input_line,target_line) in enumerate(zip(input_lines[:min_samples],target_lines[:min_samples])):
+    input_text = input_line
+    target_text = target_line
     # \tが開始記号で\nが終端記号とする
-    #target_text = '\t' + target_text + '\n'
     target_text = '\t ' + target_text + ' \n'
-    #input_texts.append(input_text)
-    #target_texts.append(target_text)
-
-    # 文字単位に分割
-    """
-    for char in input_text:
-        if char not in input_characters:
-            input_characters.add(char)
-    for char in target_text:
-        if char not in target_characters:
-            target_characters.add(char)
-    """
 
     # 単語単位に分割
     words = []
@@ -82,51 +71,20 @@ for index, line in enumerate(lines[: min(num_samples, len(lines) - 1)]):
         if word not in target_words:
             target_words.add(word)
 
-
-#input_characters = sorted(list(input_characters))
-#target_characters = sorted(list(target_characters))
 input_words = sorted(list(input_words))
 target_words = sorted(list(target_words))
-#num_encoder_tokens = len(input_characters)
-#num_decoder_tokens = len(target_characters)
 num_encoder_tokens = len(input_words)
 num_decoder_tokens = len(target_words)
-
-# 入力文と出力文それぞれで最長の文の文字数計算
-#max_encoder_seq_length = max([len(txt) for txt in input_texts])
-#max_decoder_seq_length = max([len(txt) for txt in target_texts])
 
 # 入力文と出力文それぞれで最大単語数計算
 max_encoder_seq_length = max([len(words) for words in input_texts])
 max_decoder_seq_length = max([len(words) for words in target_texts])
 
 print('Number of samples:', len(input_texts))
-#print('Number of unique input tokens:', num_encoder_tokens)
-#print('Number of unique output tokens:', num_decoder_tokens)
 print('Number of unique input words:', num_encoder_tokens)
 print('Number of unique output words:', num_decoder_tokens)
-
 print('Max sequence length for inputs:', max_encoder_seq_length)
 print('Max sequence length for outputs:', max_decoder_seq_length)
-
-
-"""
-# 文字にIDを割り振る
-input_token_index = dict(
-    [(char, i) for i, char in enumerate(input_characters)])
-target_token_index = dict(
-    [(char, i) for i, char in enumerate(target_characters)])
-
-encoder_input_data = np.zeros(
-    (len(input_texts), max_encoder_seq_length, num_encoder_tokens),
-    dtype='float32')
-decoder_input_data = np.zeros(
-    (len(input_texts), max_decoder_seq_length, num_decoder_tokens),
-    dtype='float32')
-decoder_target_data = np.zeros(
-    (len(input_texts), max_decoder_seq_length, num_decoder_tokens),
-    dtype='float32')
-"""
 
 # 単語にIDを割り振る
 input_token_index = dict(
@@ -135,65 +93,27 @@ target_token_index = dict(
     [(word, i) for i, word in enumerate(target_words)])
 
 #input_textsは文の配列なので、単語の配列で構成された文の配列が必要？
-pdb.set_trace()
 encoder_input_data = np.zeros(
     (len(input_texts), max_encoder_seq_length, num_encoder_tokens),
-    dtype='float32')
+    dtype='uint8')
 decoder_input_data = np.zeros(
     (len(input_texts), max_decoder_seq_length, num_decoder_tokens),
-    dtype='float32')
+    dtype='uint8')
 decoder_target_data = np.zeros(
     (len(input_texts), max_decoder_seq_length, num_decoder_tokens),
-    dtype='float32')
-"""
-for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
-    for t, char in enumerate(input_text):
-        encoder_input_data[i, t, input_token_index[char]] = 1.
-    for t, char in enumerate(target_text):
-        # decoder_target_data is ahead of decoder_input_data by one timestep
-        decoder_input_data[i, t, target_token_index[char]] = 1.
-        if t > 0:
-            # decoder_target_data will be ahead by one timestep
-            # and will not include the start character.
-            decoder_target_data[i, t - 1, target_token_index[char]] = 1.
-"""
+    dtype='uint8')
 
 # 文のインデックスと単語のインデックスと単語を格納するデータを作成
 for i, (input_text, target_text) in enumerate(zip(input_texts, target_texts)):
     for t, word in enumerate(input_text):
-        encoder_input_data[i, t, input_token_index[word]] = 1.
+        encoder_input_data[i, t, input_token_index[word]] = 1
     for t, word in enumerate(target_text):
         # decoder_target_data is ahead of decoder_input_data by one timestep
-        decoder_input_data[i, t, target_token_index[word]] = 1.
+        decoder_input_data[i, t, target_token_index[word]] = 1
         if t > 0:
             # decoder_target_data will be ahead by one timestep
             # and will not include the start character.
-            decoder_target_data[i, t - 1, target_token_index[word]] = 1.
-
-"""
-# Define an input sequence and process it.
-with tf.device("/cpu:0"):
-    encoder_inputs = Input(shape=(None, num_encoder_tokens))
-    encoder = LSTM(latent_dim, return_state=True)
-    encoder_outputs, state_h, state_c = encoder(encoder_inputs)
-    # We discard `encoder_outputs` and only keep the states.
-    encoder_states = [state_h, state_c]
-
-    # Set up the decoder, using `encoder_states` as initial state.
-    decoder_inputs = Input(shape=(None, num_decoder_tokens))
-    # We set up our decoder to return full output sequences,
-    # and to return internal states as well. We don't use the
-    # return states in the training model, but we will use them in inference.
-    decoder_lstm = LSTM(latent_dim, return_sequences=True, return_state=True)
-    decoder_outputs, _, _ = decoder_lstm(decoder_inputs,
-                                        initial_state=encoder_states)
-    decoder_dense = Dense(num_decoder_tokens, activation='softmax')
-    decoder_outputs = decoder_dense(decoder_outputs)
-
-    # Define the model that will turn
-    # `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
-    model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
-"""
+            decoder_target_data[i, t - 1, target_token_index[word]] = 1
 
 # Define an input sequence and process it.
 with tf.device("/cpu:0"):
@@ -249,11 +169,6 @@ if args.mode == 'train':
         else:
             print('EarlyStopping')
             break
-    # model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
-    #        batch_size=batch_size,
-    #        epochs=epochs,
-    #        validation_split=0.2, callbacks=[es_cb])
-    
     # Save model
     model.save_weights(weights_filename)
         # Next: inference mode (sampling).
@@ -272,8 +187,7 @@ encoder_model = Model(encoder_inputs, encoder_states)
 decoder_state_input_h = Input(shape=(latent_dim,))
 decoder_state_input_c = Input(shape=(latent_dim,))
 decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-decoder_outputs, state_h, state_c = decoder_lstm(
-    decoder_inputs, initial_state=decoder_states_inputs)
+decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
 decoder_states = [state_h, state_c]
 decoder_outputs = decoder_dense(decoder_outputs)
 decoder_model = Model(
@@ -282,12 +196,6 @@ decoder_model = Model(
 
 # Reverse-lookup token index to decode sequences back to
 # something readable.
-"""
-reverse_input_char_index = dict(
-    (i, char) for char, i in input_token_index.items())
-reverse_target_char_index = dict(
-    (i, char) for char, i in target_token_index.items())
-"""
 # でコードの際にインデックスから単語を引くための逆引き辞書
 reverse_input_token_index = dict(
     (i, word) for word, i in input_token_index.items())
@@ -302,8 +210,6 @@ def decode_sequence(input_seq):
     target_seq = np.zeros((1, 1, num_decoder_tokens))
     # Populate the first character of target sequence with the start character.
     target_seq[0, 0, target_token_index['\t']] = 1.
-
-
     # Sampling loop for a batch of sequences
     # (to simplify, here we assume a batch of size 1).
     stop_condition = False
@@ -313,17 +219,6 @@ def decode_sequence(input_seq):
             [target_seq] + states_value)
 
         # Sample a token
-        """
-        sampled_token_index = np.argmax(output_tokens[0, -1, :])
-        sampled_char = reverse_target_char_index[sampled_token_index]
-        decoded_sentence += sampled_char
-
-        # Exit condition: either hit max length
-        # or find stop character.
-        if (sampled_char == '\n' or
-           len(decoded_sentence) > max_decoder_seq_length):
-            stop_condition = True
-        """
         sampled_token_index = np.argmax(output_tokens[0, -1, :])
         sampled_word = reverse_target_token_index[sampled_token_index]
         decoded_sentence += sampled_word
