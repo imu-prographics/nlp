@@ -159,6 +159,7 @@ if args.mode == 'train':
     n_batch = math.ceil(row_train/batch_size)
     loss_bk = 10000
     k=0
+    earlystpping_counter = 0
 
     for j in range(0, epochs) :
         print("Epoch ", j+1, "/", epochs)
@@ -209,7 +210,11 @@ if args.mode == 'train':
         loss_mean = loss_mean / n_batch
         if j == 0 or loss_mean <= loss_bk:
             loss_bk = loss_mean
+            earlystpping_counter = 0
         else:
+            earlystpping_counter += 1
+            
+        if earlystpping_counter > 3:
             print('EarlyStopping')
             break
     
