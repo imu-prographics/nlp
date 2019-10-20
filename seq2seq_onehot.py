@@ -136,11 +136,11 @@ if args.mode == 'train':
     target_id_train, target_id_val = train_test_split(decoder_target_id, train_size=0.8)
 
     with tf.device("/cpu:0"):
-        encoder_inputs = Input(shape=(None, num_encoder_words))
+        encoder_inputs = Input(shape=(None, num_words))
         encoder_outputs , state_h, state_c = LSTM(latent_dim, return_sequences=True, return_state=True)(encoder_inputs)
         encoder_states = [state_h, state_c]
 
-        #decoder_inputs = Input(shape=(None, ))
+        decoder_inputs = Input(shape=(None, ))
         decoder_lstm = LSTM(latent_dim, return_sequences=True, return_state=True)
         x,_,_ = decoder_lstm(encoder_outputs, initial_state=encoder_states)
         decoder_dense = Dense(num_words, activation='softmax')
@@ -149,13 +149,14 @@ if args.mode == 'train':
         # Define the model that will turn
         # `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+        model.summary()
 
     # Run training
     model = multi_gpu_model(model, gpus=gpu_count)
     model.compile(optimizer='rmsprop', loss=ppx) 
 
-    row_train = encoder_id_train.shape[0]
-    row_val = encoder_id_val.shape[0]
+    row_train = len(encoder_id_train)
+    row_val = len(encoder_id_val)
     n_batch = math.ceil(row_train/batch_size)
     loss_bk = 10000
     k=0
@@ -169,12 +170,12 @@ if args.mode == 'train':
             end_train = min([(i+1)*batch_size, row_train])
             start_val = k*batch_size
             end_val = min([(k+1)*batch_size, row_val])
-            encoder_train_batch = encoder_id_train[start_train:end_train,:]
-            decoder_train_batch = decoder_id_train[start_train:end_train,:]
+            encoder_train_batch = encoder_id_train[start_train:end_train:]
+            decoder_train_batch = decoder_id_train[start_train:end_train:]
             target_train_batch = target_id_train[start_train:end_train:]
             
-            encoder_val_batch = encoder_id_val[start_val:end_val,:]
-            decoder_val_batch = decoder_id_val[start_val:end_val,:]
+            encoder_val_batch = encoder_id_val[start_val:end_val:]
+            decoder_val_batch = decoder_id_val[start_val:end_val:]
             target_val_batch = target_id_val[start_val:end_val:]
             
             if end_val%row_val==0:
