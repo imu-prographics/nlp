@@ -9,9 +9,8 @@ import MeCab
 from argparse import ArgumentParser
 from keras.losses import categorical_crossentropy
 from keras import backend as K
-
-from  attention_decoder  import  AttentionDecoder
-
+from attention_decoder import AttentionDecoder
+from sklearn.model_selection import train_test_split
 import math
 
 import pdb; 
@@ -28,11 +27,20 @@ def parser():
     args = argparser.parse_args()
     return args
 
-def split_train_val(data_list, rate):
-        n_split = int(len(data_list)*rate)
-        data_array = np.array([np.array(line) for line in data_list])
-        data_train, data_val = np.vsplit(np.array(data_array),[n_split])
-        return data_train, data_val
+def split_train_val_np(data_list, rate):
+    n_split = int(len(data_list)*rate)
+    data_array = np.array([np.array(line) for line in data_list])
+    data_train, data_val = np.vsplit(np.array(data_array),[n_split])
+    return data_train , data_val
+
+def split_train_val_list(data_list, rate):
+    n_split = int(len(data_list)*rate)
+    data_array = np.array([np.array(line) for line in data_list])
+    print(data_array.shape)
+    data_train, data_val = np.vsplit(data_array,[n_split])
+    return data_train , data_val
+
+
 
 def ppx(y_true, y_pred):
     loss = categorical_crossentropy(y_true, y_pred)
@@ -48,6 +56,7 @@ gpu_count = 2
 epochs = 100  # Number of epochs to train for.
 batch_size = 100
 latent_dim = 256  # Latent dimensionality of the encoding space.
+train_val_rate = 0.8
 num_samples = args.num_samples  # Number of samples to train on.
 # Path to the data txt file on disk.
 
@@ -65,6 +74,7 @@ if args.mode == 'train':
         target_lines = f.read().split('\n')
 
     min_samples = min(num_samples, min(len(input_lines)-1, len(target_lines)-1))
+    max_samples = len(input_lines)
     for index, (input_text,target_text) in enumerate(zip(input_lines[:min_samples],target_lines[:min_samples])):
         # \tが開始記号で\nが終端記号とする
         target_text = '\t ' + target_text + ' \n'
@@ -82,6 +92,8 @@ if args.mode == 'train':
         decoder_input_texts.append(seq)
     dict_words = sorted(list(dict_words))
     num_words = len(dict_words)
+    input_lines.clear()
+    target_lines.clear()
 
     # 入力文と出力文それぞれで最大単語数計算
     max_input_seq_length = max([len(seq) for seq in encoder_input_texts])
@@ -92,58 +104,130 @@ if args.mode == 'train':
     print('Max sequence length for inputs:', max_input_seq_length)
     print('Max sequence length for outputs:', max_target_seq_length)
         # 単語にIDを割り振る
-    word_index = dict(
-        [(word, i) for i, word in enumerate(dict_words)])
-    
-    #文章を単語IDの配列で表す
-    encoder_input_data = np.zeros((len(encoder_input_texts), max_input_seq_length),dtype='uint8')
-    decoder_input_data = np.zeros((len(encoder_input_texts), max_target_seq_length),dtype='uint8')
-    decoder_target_data = np.zeros((len(encoder_input_texts), max_target_seq_length, len(word_index)),dtype='uint8')
+    word_index = dict([(word, i) for i, word in enumerate(dict_words)])
 
+    # Define an input sequence and process it.
+    #
+    # データセットの準備
+    #
+    encoder_input_seq = []
+    decoder_input_seq = []
+    decoder_target_seq = []
+    decoder_target_id = []
+    encoder_input_id = []
+    decoder_input_id = []
+
+    # Textを単語IDに変換
     for i,(encoder_seq, decoder_seq) in enumerate(zip(encoder_input_texts, decoder_input_texts)):
         for j, (encoder_word, decoder_word) in enumerate(zip(encoder_seq, decoder_seq)):
-            encoder_input_data[i,j] = word_index[encoder_word]
-            decoder_input_data[i,j] = word_index[decoder_word] 
+            encoder_input_seq.append(word_index[encoder_word])
+            decoder_input_seq.append(word_index[decoder_word])
             if j > 0:
-                decoder_target_data[i, j-1, word_index[decoder_word]] = 1 
-
-    encoder_train, encoder_val = split_train_val(encoder_input_data, 0.8)
-    decoder_train, decoder_val = split_train_val(decoder_input_data, 0.8)
-    target_train, target_val = split_train_val(decoder_target_data, 0.8)
+                decoder_target_seq.append(word_index[decoder_word])
+        encoder_input_id.append(encoder_input_seq)
+        decoder_input_id.append(decoder_input_seq)  
+        decoder_target_id.append(decoder_target_seq)
+        decoder_input_seq.clear()
+        decoder_input_seq.clear()
+        decoder_target_seq.clear()
     
-    # Define an input sequence and process it.
+    encoder_id_train, encoder_id_val = train_test_split(encoder_input_id, train_size=0.8)
+    decoder_id_train, decoder_id_val = train_test_split(decoder_input_id, train_size=0.8)
+    target_id_train, target_id_val = train_test_split(decoder_target_id, train_size=0.8)
 
     with tf.device("/cpu:0"):
-        encoder_inputs = Input(shape=(None,))
-        encoder_emb = Embedding(num_words, latent_dim)
-        x = encoder_emb(encoder_inputs)
-        encoder = LSTM(latent_dim, return_state=True, return_sequences=True)
-        x , state_h, state_c = encoder(x)
-        # We discard `encoder_outputs` and only keep the states.
+        #Encoder
+        encoder_inputs = Input(shape=(None, num_words))
+        encoder_outputs , state_h, state_c = LSTM(latent_dim, return_sequences=True, return_state=True)(encoder_inputs)
         encoder_states = [state_h, state_c]
-
-        # Set up the decoder, using `encoder_states` as initial state.
+        encoder_model = Model(inputs=encoder_inputs, outputs=[encoder_outputs, encoder_states])
+        
+        #Decoder
         decoder_inputs = Input(shape=(None, ))
-        decoder_emb = Embedding(num_words, latent_dim)
-        x = decoder_emb(decoder_inputs)
         decoder_lstm = LSTM(latent_dim, return_sequences=True, return_state=True)
-        x,_,_ = decoder_lstm(x, initial_state=encoder_states)
+        x,_,_ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
         decoder_dense = Dense(num_words, activation='softmax')
         decoder_outputs = decoder_dense(x)
+        
+        #
+        Dense1 = Dense(latent_dim, name='Dense1')
+        Dense2 = Dense(latent_dim, name='Dense2')
+        a_Concat1 = keras.layers.Concatenate(axis=-1)
+        a_decode_input_slice1 = Lambda(lambda x: x[:,0,:], output_shape=(1,latent_dim,), name='slice1')
+        a_decode_input_slice2 = Lambda(lambda x: x[:,1:,:], name='slice2')
+        a_Reshape1 = keras.layers.Reshape((1,latent_dim))
+        a_Dot1 = keras.layers.Dot(-1,name='a_Dot1')
+        a_Softmax = keras.layers.Softmax(axis=-1,name='a_Softmax')
+        a_transpose = keras.layers.Reshape((self.maxlen_e,1),name='Transpose') 
+        a_Dot2=keras.layers.Dot(1,name='a_Dot2')
+        a_Concat2 = keras.layers.Concatenate(-1,name='a_Concat2')
+        a_tanh = Lambda(lambda x: K.tanh(x),name='tanh')
+        a_Concat3 = keras.layers.Concatenate(axis=-1,name='a_Concat3')
+        decoder_Dense = Dense(num_words,activation='softmax', name='decoder_Dense')        
 
+        a_output = Lambda(lambda x: K.zeros_like(x[:,-1,:]), output_shape=(1,latent_dim,))(encoder_outputs) 
+        a_output = keras.layers.Reshape((1,latent_dim))(a_output)
+
+        decoder_inputs = Input(shape=(self.maxlen_d,), dtype='int32', name='decorder_inputs')        
+        d_i = Embedding(output_dim=latent_dim, input_dim=self.input_dim, #input_length=self.maxlen_d,
+                        mask_zero=True)(decoder_inputs)
+        d_i=BatchNormalization(axis=-1)(d_i)
+        d_i=Masking(mask_value=0.0)(d_i)          
+        d_input=d_i
+
+        for i in range(0,self.maxlen_d) :
+            d_i_timeslice = a_decode_input_slice1(d_i)
+            if i <= self.maxlen_d-2 :
+                d_i=a_decode_input_slice2(d_i)
+            d_i_timeslice=a_Reshape1(d_i_timeslice)
+            lstm_input = a_Concat1([a_output,d_i_timeslice])         #前段出力とdcode_inputをconcat
+            
+            h_output, h, c = decoder_lstm(lstm_input,initial_state=encoder_states)            
+
+            attn_states = [h,c]
+
+            #attention
+            a_o = h_output
+            a_o = Dense1(a_o)
+            a_o = a_Dot1([a_o,encoder_outputs])                           #encoder出力の転置行列を掛ける
+            a_o= a_Softmax(a_o)                                           #softmax
+            a_o= a_transpose (a_o) 
+            a_o = a_Dot2([a_o,encoder_outputs])                           #encoder出力行列を掛ける
+            a_o = a_Concat2([a_o,h_output])                               #ここまでの計算結果とLSTM出力をconcat
+            a_o = Dense2(a_o)  
+            a_o = a_tanh(a_o)                                               #tanh
+            a_output=a_o                                                  #次段attention処理向け出力
+            if i == 0 :                                                  #docoder_output
+                d_output=a_o
+            else :
+                d_output=a_Concat3([d_output,a_o]) 
+
+        d_output=keras.layers.Reshape((self.maxlen_d,latent_dim))(d_output)        
+
+        print('#5')
+        decoder_outputs = decoder_Dense(d_output)
+        model = Model(inputs=[encoder_input, decoder_inputs], outputs=decoder_outputs)
+        model.compile(loss="categorical_crossentropy",optimizer="Adam", metrics=['categorical_accuracy'])
+
+
+        #
+        decoder_model = 
         # Define the model that will turn
         # `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+        model.summary()
 
     # Run training
     model = multi_gpu_model(model, gpus=gpu_count)
     model.compile(optimizer='rmsprop', loss=ppx) 
-    row_train = encoder_train.shape[0]
-    row_val = encoder_val.shape[0]
+
+    row_train = len(encoder_id_train)
+    row_val = len(encoder_id_val)
     n_batch = math.ceil(row_train/batch_size)
     loss_bk = 10000
     k=0
-    
+    earlystpping_counter = 0
+
     for j in range(0, epochs) :
         print("Epoch ", j+1, "/", epochs)
         loss_mean = 0
@@ -152,27 +236,52 @@ if args.mode == 'train':
             end_train = min([(i+1)*batch_size, row_train])
             start_val = k*batch_size
             end_val = min([(k+1)*batch_size, row_val])
-            encoder_train_batch = encoder_train[start_train:end_train,:]
-            decoder_train_batch = decoder_train[start_train:end_train,:]
-            target_train_batch = target_train[start_train:end_train,:]
+            encoder_train_batch = encoder_id_train[start_train:end_train:]
+            decoder_train_batch = decoder_id_train[start_train:end_train:]
+            target_train_batch = target_id_train[start_train:end_train:]
             
-            encoder_val_batch = encoder_val[start_val:end_val,:]
-            decoder_val_batch = decoder_val[start_val:end_val,:]
-            target_val_batch = target_val[start_val:end_val,:]
+            encoder_val_batch = encoder_id_val[start_val:end_val:]
+            decoder_val_batch = decoder_id_val[start_val:end_val:]
+            target_val_batch = target_id_val[start_val:end_val:]
             
             if end_val%row_val==0:
                 k = 0
             else:
                 k += 1
+            
+            encoder_onehot_train_batch = np.zeros((len(encoder_train_batch), max_input_seq_length, len(word_index)),dtype='uint8')
+            encoder_onehot_val_batch = np.zeros((len(encoder_val_batch), max_input_seq_length, len(word_index)),dtype='uint8')
 
-            train_loss = model.train_on_batch([encoder_train_batch,decoder_train_batch],target_train_batch)
-            val_loss = model.test_on_batch([encoder_val_batch, decoder_val_batch] ,target_val_batch)
+            decoder_onehot_train_batch = np.zeros((len(decoder_train_batch), max_target_seq_length, len(word_index)),dtype='uint8')
+            decoder_onehot_val_batch = np.zeros((len(decoder_val_batch), max_target_seq_length, len(word_index)),dtype='uint8')
+
+            target_onehot_train_batch = np.zeros((len(target_train_batch), max_target_seq_length, len(word_index)),dtype='uint8')
+            target_onehot_val_batch = np.zeros((len(target_val_batch), max_target_seq_length, len(word_index)),dtype='uint8')
+
+            for i, (encoder_seq, decoder_seq, target_seq) in enumerate(zip(encoder_train_batch, decoder_train_batch, target_train_batch)):
+                for j, (encoder_id, decoder_id, target_id) in enumerate(zip(encoder_seq, decoder_seq, target_seq)):
+                    encoder_onehot_train_batch[i, j, encoder_id] = 1
+                    decoder_onehot_train_batch[i, j, decoder_id] = 1
+                    target_onehot_train_batch[i, j, target_id] = 1 
+            
+            for i, (encoder_seq, decoder_seq, target_seq) in enumerate(zip(encoder_val_batch, decoder_val_batch, target_val_batch)):
+                for j, (encoder_id, decoder_id, target_id) in enumerate(zip(encoder_seq, decoder_seq, target_seq)):
+                    encoder_onehot_val_batch[i, j, encoder_id] = 1
+                    decoder_onehot_val_batch[i, j, decoder_id] = 1
+                    target_onehot_val_batch[i, j, target_id] = 1
+
+            train_loss = model.train_on_batch([encoder_train_batch,decoder_train_batch],target_onehot_train_batch)
+            val_loss = model.test_on_batch([encoder_val_batch, decoder_val_batch] ,target_onehot_val_batch)
             loss_mean += val_loss
             print("%d/%d train_loss:%f val_loss:%f" % (start_train, row_train, train_loss, val_loss))
         loss_mean = loss_mean / n_batch
         if j == 0 or loss_mean <= loss_bk:
             loss_bk = loss_mean
+            earlystpping_counter = 0
         else:
+            earlystpping_counter += 1
+            
+        if earlystpping_counter > 3:
             print('EarlyStopping')
             break
     
@@ -239,7 +348,7 @@ if args.mode=='train':
     for seq_index in range(10):
         # Take one sequence (part of the training set)
         # for trying out decoding.
-        input_seq = encoder_input_data[seq_index: seq_index + 1]
+        input_seq = encoder_input_id[seq_index: seq_index + 1]
         decoded_sentence = decode_sequence(input_seq)
 
         print('-')

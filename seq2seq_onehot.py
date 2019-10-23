@@ -142,7 +142,7 @@ if args.mode == 'train':
 
         decoder_inputs = Input(shape=(None, ))
         decoder_lstm = LSTM(latent_dim, return_sequences=True, return_state=True)
-        x,_,_ = decoder_lstm(encoder_outputs, initial_state=encoder_states)
+        x,_,_ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
         decoder_dense = Dense(num_words, activation='softmax')
         decoder_outputs = decoder_dense(x)
 
