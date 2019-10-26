@@ -5,7 +5,7 @@ read_dir = "./text/main_extracted/"
 save_dir = "./text/noise_dlt/"
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-read_paths = glob.glob(read_dir + "*_main.txt")
+read_paths = glob.glob(read_dir + "*.txt")
 patterns = ["【.*】",
             "◆",
             "★",
@@ -14,6 +14,9 @@ patterns = ["【.*】",
             "◇",
             "◇.*\n",
             "＊",
+            "〇　…",
+            "○　…",
+            "…　…",
             "（.*）",
             "＜.*＞",
             "——",
@@ -45,7 +48,6 @@ patterns = ["【.*】",
 
 for read_path in read_paths:
     save_path = save_dir + os.path.basename(read_path)
-    save_path = re.sub("_main.txt","",save_path)+"_noise_dlt.txt"
     print(save_path)
     with open(read_path,"r",encoding="utf-8") as rf:
         lines = rf.read().split('\n')

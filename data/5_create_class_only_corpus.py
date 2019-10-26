@@ -16,10 +16,10 @@ hold_words_class = args.holdclass
 save_file_tag = args.file
 
 dir_name = "./text/"
-open_file_names = glob.glob(dir_name+"*_mecab_particle.txt")
+open_file_names = glob.glob(dir_name+"*.txt")
 
 for open_file_name in open_file_names:
-    save_file_name = re.sub("_mecab_particle.txt","",open_file_name)+save_file_tag
+    save_file_name = re.sub(".txt","",open_file_name)+save_file_tag
     with open(open_file_name, "r", encoding="utf-8") as of:
         print(open_file_name) 
         lines = of.readlines()

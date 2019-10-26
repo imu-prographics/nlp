@@ -2,7 +2,7 @@ import glob
 import re
 
 read_dir = "./text/original/"
-save_dir = "./text/main_contents_extracted/"
+save_dir = "./text/pick_article/"
 read_paths = glob.glob(read_dir + "*.txt")
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
@@ -10,7 +10,6 @@ patterns = ["＼ＨＯＮ＼","＼Ｔ２＼"]
 
 for read_path in read_paths:
     save_path = save_dir + os.path.basename(read_path)
-    save_path = re.sub(".txt","",save_path) + "_main.txt"
     print(save_path)
     with open(read_path, "r", encoding="utf-8") as f:
         lines = f.readlines()

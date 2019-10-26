@@ -21,13 +21,13 @@ rate_replace = args.rate
 
 read_dir = "./text/mecab_particle/"
 save_dir = "./text/masked/"
-read_paths = glob.glob(read_dir + "*_mecab_particle.txt")
+read_paths = glob.glob(read_dir + "*.txt")
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 #random.seed(0)
 for read_path in read_paths:
     save_path = save_dir + os.path.basename(read_path)
-    save_path = re.sub("_mecab_particle.txt","",save_path) +"_masked_"+save_tag+".txt"
+    save_path = re.sub(".txt","",save_path) +"_masked_"+save_tag+".txt"
     with open(read_path,"r",encoding="utf-8") as rf:
         lines = rf.read().split('\n')
     print(save_path)

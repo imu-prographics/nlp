@@ -5,11 +5,10 @@ import os
 
 read_dir = "./text/mecab_particle/"
 save_dir = "./text/normal/"
-read_paths = glob.glob(read_dir + "*_mecab_particle.txt")
+read_paths = glob.glob(read_dir + "*.txt")
 
 for read_path in read_paths:
     save_path = save_dir + os.path.basename(read_path)
-    save_path = re.sub("_mecab_particle.txt","",save_path)+"_normal.txt"
     with open(read_path, "r", encoding="utf-8") as of:
         print(save_path) 
         lines = of.readlines()

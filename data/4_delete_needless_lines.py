@@ -5,14 +5,13 @@ import os
 
 read_dir = "./text/mecab/"
 save_dir = "./text/mecab_particle/"
-read_paths = glob.glob(read_dir+"*_mecab.txt")
+read_paths = glob.glob(read_dir+"*.txt")
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 flag = False
 line_stack = []
 for read_path in read_paths:
     save_path = save_dir + os.path.basename(read_path)
-    save_path = re.sub("_mecab.txt","",save_path)+"_mecab_particle.txt"
     print(save_path)
     with open(read_path,"r",encoding="utf-8") as rf:
         lines = rf.read().split('\n')

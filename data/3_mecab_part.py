@@ -6,13 +6,12 @@ import os
 
 read_dir = "./text/indention/"
 save_dir = "./text/mecab/"
-read_paths = glob.glob(read_dir + "*_indention.txt")
+read_paths = glob.glob(read_dir + "*.txt")
 mt = MeCab.Tagger("-Ochasen")
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 for read_path in read_paths:
     save_path = save_dir + os.path.basename(read_path)
-    save_path = re.sub("_indention.txt","",save_path)+"_mecab.txt"
     print(save_path)
     with open(read_path,"r",encoding="utf-8") as rf:
         lines = rf.read().split('\n')
